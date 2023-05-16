@@ -5,6 +5,70 @@ import math as m
 import random
 import os
 
+def load_materials(material_dir):
+  """
+  Load materials from a directory. We assume that the directory contains .blend
+  files with one material each. The file X.blend has a single NodeTree item named
+  X; this NodeTree item must have a "Color" input that accepts an RGBA value.
+  """
+  for fn in os.listdir(material_dir):
+    if not fn.endswith('.blend'): continue
+    name = os.path.splitext(fn)[0]
+    filepath = os.path.join(material_dir, fn, 'NodeTree', name)
+    bpy.ops.wm.append(filename=filepath)
+
+
+def add_material(name, **properties):
+  """
+  Create a new material and assign it to the active object. "name" should be the
+  name of a material that has been previously loaded using load_materials.
+  """
+  # Figure out how many materials are already in the scene
+  mat_count = len(bpy.data.materials)
+
+  # Create a new material; it is not attached to anything and
+  # it will be called "Material"
+  bpy.ops.material.new()
+
+  # Get a reference to the material we just created and rename it;
+  # then the next time we make a new material it will still be called
+  # "Material" and we will still be able to look it up by name
+  mat = bpy.data.materials['Material']
+  mat.name = 'Material_%d' % mat_count
+
+  # Attach the new material to the active object
+  # Make sure it doesn't already have materials
+  obj = bpy.context.active_object
+  assert len(obj.data.materials) == 0
+  obj.data.materials.append(mat)
+
+  # Find the output node of the new material
+  output_node = None
+  for n in mat.node_tree.nodes:
+    if n.name == 'Material Output':
+      output_node = n
+      break
+
+  # Add a new GroupNode to the node tree of the active material,
+  # and copy the node tree from the preloaded node group to the
+  # new group node. This copying seems to happen by-value, so
+  # we can create multiple materials of the same type without them
+  # clobbering each other
+  group_node = mat.node_tree.nodes.new('ShaderNodeGroup')
+  group_node.node_tree = bpy.data.node_groups[name]
+
+  # Find and set the "Color" input of the new group node
+  for inp in group_node.inputs:
+    if inp.name in properties:
+      inp.default_value = properties[inp.name]
+
+  # Wire the output of the new group node to the input of
+  # the MaterialOutput node
+  mat.node_tree.links.new(
+      group_node.outputs['Shader'],
+      output_node.inputs['Surface'],
+  )
+
 colors = np.array([
     [255, 127, 80, 255],  # Coral
     [0, 255, 127, 255],   # Spring Green
@@ -27,6 +91,32 @@ colors = np.array([
     [250, 128, 114, 255], # Salmon
     [147, 112, 219, 255], # Medium Purple
 ], dtype=np.uint8)
+
+colors = np.array([
+    [255, 0, 0, 255],      # Red
+    [0, 255, 0, 255],      # Green
+    [0, 0, 255, 255],      # Blue
+    [255, 255, 0, 255],    # Yellow
+    [255, 0, 255, 255],    # Magenta
+    [0, 255, 255, 255],    # Cyan
+    [255, 128, 0, 255],    # Orange
+    [128, 0, 255, 255],    # Purple
+    [0, 255, 128, 255],    # Lime
+    [128, 255, 0, 255],    # Chartreuse
+    [255, 0, 128, 255],    # Pink
+    [0, 128, 255, 255],    # Sky Blue
+    [255, 128, 128, 255],  # Light Pink
+    [128, 255, 128, 255],  # Light Green
+    [128, 128, 255, 255],  # Light Blue
+    [123, 87, 50, 255],    # Brown
+    [70, 130, 180, 255],   # Steel Blue
+    [255, 192, 203, 255],  # Pink
+    [0, 128, 0, 255],      # Forest Green
+    [255, 255, 128, 255]   # Light Yellow
+], dtype=np.uint8)
+
+
+colors = colors // 4
 
 # Normalize the color values to the range [0, 1]
 colors = colors.astype(np.float32) / 255.0
@@ -55,6 +145,8 @@ def get_quaternion_from_euler(roll, pitch, yaw):
 
 def set_scene(filepath):
     bpy.ops.wm.open_mainfile(filepath=filepath)
+    
+    load_materials('./mats')
 
     # Add a camera to the scene
     camera_data = bpy.data.cameras.new("Camera")
@@ -71,18 +163,68 @@ def set_scene(filepath):
     axis.rotation_euler = (0, 0, 0)
     axis.location = (0, 0, .25)
     camera_object.parent = axis
-
-    # Add a light to the scene
-    light_data = bpy.data.lights.new(name="Light", type='POINT')
-    light_object = bpy.data.objects.new(name="Light", object_data=light_data)
+    
+    bpy.context.view_layer.objects.active = bpy.context.scene.objects[2]
+    bpy.context.object.data.materials.clear()
+    add_material("Rubber")
+    
+    
+    #bpy.data.materials["Red"].use_nodes = False
+    
+    base_light_count = 1
+    norm = .3
+    bl_positions = [
+        [.5,0,0],
+        [-.5,0,0],
+        [0,.5,0],
+       [0,-.5,0],
+       [0,0,.5],
+       [.25, .25, 0],
+       [.25, -.25, 0],
+       [-.25, .25, 0],
+       [-.25,-.25, 0]
+    ]
+    
+    bl_positions = [
+      [0,0,1],
+      [1,0,0],
+      [-1/2, np.sqrt(3)/2,0],
+      [-1/2,-np.sqrt(3)/2, 0]
+    ]
+    
+    
+    base_light_count = len(bl_positions)
+    print(len(bl_positions))
+    
+    for i in range(base_light_count):
+        light_data = bpy.data.lights.new(name=f"Light{i}", type='POINT')
+        light_object = bpy.data.objects.new(name=f"Light{i}", object_data=light_data)
+        scene.collection.objects.link(light_object)
+        bl_positions[i] = bl_positions[i] / np.linalg.norm(bl_positions[i]) * norm
+        bl_positions[i][2] += .2
+        light_object.location = (bl_positions[i][0], bl_positions[i][1], bl_positions[i][2])
+        light_object.data.energy = 20
+        
+    light_data = bpy.data.lights.new(name="RoamingLight", type='POINT')
+    light_object = bpy.data.objects.new(name="RoamingLight", object_data=light_data)
     scene.collection.objects.link(light_object)
     light_object.location = (0, 0, 1)
+
 
     return scene, axis, light_object
 
 def change_color(color):
-    bpy.data.materials["Red"].node_tree.nodes["Diffuse BSDF"].inputs[0].default_value = color
-    bpy.data.materials["Blue"].node_tree.nodes["Diffuse BSDF"].inputs[0].default_value = color
+    bpy.data.materials["Material_3"].node_tree.nodes["Group"].inputs[0].default_value = color
+    bpy.ops.wm.save_as_mainfile(filepath="/home/tkaminsky/Desktop/bingham/bingham_vis/test.blend")
+
+    # bpy.data.materials["Red"].metallic = 0
+    # bpy.data.materials["Blue"].metallic = 0
+    # bpy.data.materials["Blue"].roughness = .55
+    # bpy.data.materials["Red"].roughness = .55
+    # bpy.data.materials["Blue"].diffuse_color = color
+    # bpy.data.materials["Red"].diffuse_color = color
+    # bpy.data.materials["Blue"].specular_intensity = .5
+    # bpy.data.materials["Red"].specular_intensity = .5
 
 
 
@@ -104,18 +246,19 @@ def generate_data(object, randomize_color=False):
 
     if not os.path.exists(f'bc_data/{object}'):
             os.makedirs(f'bc_data/{object}')
-            os.makedirs(f'bc_data/{object}/bottle')
-            os.makedirs(f'bc_data/{object}/cap')
+            os.makedirs(f'bc_data/{object}/Bottle')
+            os.makedirs(f'bc_data/{object}/Cap')
 
     for i in range(len(files)):
         scene, axis, light_object = set_scene(files[i])
-        energy_bounds = [light_object.data.energy * .5, light_object.data.energy * 1.5]
+        energy_bounds = [50, 150]
          
-        gt_angles = np.zeros((len(angles), len(angles_second), len(angles_third), 4))
+        gt_angles = np.zeros((len(angles) * len(angles_second) * len(angles_third), 4))
 
         obj_now = scene.objects[types[i]]
         
         n = 0
+        idx = 0
 
         for j in range(len(angles)):
             x = angles[j]
@@ -124,11 +267,13 @@ def generate_data(object, randomize_color=False):
                 for l in range(len(angles_third)):
                     z = angles_third[l]
 
-                    light_pos = np.random.rand(2) - 0.5
+                    light_pos = (np.random.rand(2) - 0.5) 
                     # Change the light position to a random position
-                    light_object.location = (light_pos[0], light_pos[1], 1)
+                    light_object.location = (light_pos[0], light_pos[1], .5)
                     # Change energy 
                     light_object.data.energy = np.random.uniform(energy_bounds[0], energy_bounds[1])
+                    light_object.data.energy = 50
+
 
                     change_color(random.choice(colors))
 
@@ -152,7 +297,8 @@ def generate_data(object, randomize_color=False):
                     # Turn the euler angles into a quaternion
                     gt_angle_quat = get_quaternion_from_euler(x, y, z)
 
-                    gt_angles[j, k, l] = gt_angle_quat
+                    gt_angles[idx] = gt_angle_quat
+                    idx += 1
 
                     bpy.ops.render.render(write_still=True)
 
