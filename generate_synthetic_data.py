@@ -4,6 +4,13 @@ import numpy as np
 import math as m
 import random
 import os
+from PIL import Image
+
+import matplotlib.pyplot as plt
+
+from scipy.spatial.transform import Rotation as R
+
+import h5py
 
 def load_materials(material_dir):
   """
@@ -93,6 +100,7 @@ colors = np.array([
 ], dtype=np.uint8)
 
 colors = np.array([
+   [217, 217,217, 255],
     [255, 0, 0, 255],      # Red
     [0, 255, 0, 255],      # Green
     [0, 0, 255, 255],      # Blue
@@ -120,9 +128,6 @@ colors = colors // 4
 
 # Normalize the color values to the range [0, 1]
 colors = colors.astype(np.float32) / 255.0
-
-dir = "FilesForKu/"
-objects = ['Arrow_cube', 'Circle_cube', 'Cross_cube', 'Diamond_cube', 'Hexagon_cube', 'Key_cube', 'Line_cube', 'Pentagon_cube', 'U_cube']
 
 def get_quaternion_from_euler(roll, pitch, yaw):
   """
@@ -167,43 +172,45 @@ def set_scene(filepath):
     bpy.context.view_layer.objects.active = bpy.context.scene.objects[2]
     bpy.context.object.data.materials.clear()
     add_material("Rubber")
+
+    bpy.data.materials["Material_3"].node_tree.nodes["Group"].inputs[0].default_value = colors[0] #(217, 217, 217, 255)
     
     
     #bpy.data.materials["Red"].use_nodes = False
     
-    base_light_count = 1
-    norm = .3
-    bl_positions = [
-        [.5,0,0],
-        [-.5,0,0],
-        [0,.5,0],
-       [0,-.5,0],
-       [0,0,.5],
-       [.25, .25, 0],
-       [.25, -.25, 0],
-       [-.25, .25, 0],
-       [-.25,-.25, 0]
-    ]
+    # base_light_count = 1
+    # norm = .3
+    # bl_positions = [
+    #     [.5,0,0],
+    #     [-.5,0,0],
+    #     [0,.5,0],
+    #    [0,-.5,0],
+    #    [0,0,.5],
+    #    [.25, .25, 0],
+    #    [.25, -.25, 0],
+    #    [-.25, .25, 0],
+    #    [-.25,-.25, 0]
+    # ]
     
-    bl_positions = [
-      [0,0,1],
-      [1,0,0],
-      [-1/2, np.sqrt(3)/2,0],
-      [-1/2,-np.sqrt(3)/2, 0]
-    ]
+    # bl_positions = [
+    #   [0,0,1],
+    #   [1,0,0],
+    #   [-1/2, np.sqrt(3)/2,0],
+    #   [-1/2,-np.sqrt(3)/2, 0]
+    # ]
     
     
-    base_light_count = len(bl_positions)
-    print(len(bl_positions))
+    # base_light_count = len(bl_positions)
+    # print(len(bl_positions))
     
-    for i in range(base_light_count):
-        light_data = bpy.data.lights.new(name=f"Light{i}", type='POINT')
-        light_object = bpy.data.objects.new(name=f"Light{i}", object_data=light_data)
-        scene.collection.objects.link(light_object)
-        bl_positions[i] = bl_positions[i] / np.linalg.norm(bl_positions[i]) * norm
-        bl_positions[i][2] += .2
-        light_object.location = (bl_positions[i][0], bl_positions[i][1], bl_positions[i][2])
-        light_object.data.energy = 20
+    # for i in range(base_light_count):
+    #     light_data = bpy.data.lights.new(name=f"Light{i}", type='POINT')
+    #     light_object = bpy.data.objects.new(name=f"Light{i}", object_data=light_data)
+    #     scene.collection.objects.link(light_object)
+    #     bl_positions[i] = bl_positions[i] / np.linalg.norm(bl_positions[i]) * norm
+    #     bl_positions[i][2] += .2
+    #     light_object.location = (bl_positions[i][0], bl_positions[i][1], bl_positions[i][2])
+    #     light_object.data.energy = 20
         
     light_data = bpy.data.lights.new(name="RoamingLight", type='POINT')
     light_object = bpy.data.objects.new(name="RoamingLight", object_data=light_data)
@@ -214,8 +221,8 @@ def set_scene(filepath):
     return scene, axis, light_object
 
 def change_color(color):
-    bpy.data.materials["Material_3"].node_tree.nodes["Group"].inputs[0].default_value = color
-    bpy.ops.wm.save_as_mainfile(filepath="/home/tkaminsky/Desktop/bingham/bingham_vis/test.blend")
+    bpy.data.materials["Material_3"].node_tree.nodes["Group"].inputs[0].default_value = colors[0]
+    #bpy.ops.wm.save_as_mainfile(filepath="/home/tkaminsky/Desktop/bingham/bingham_vis/test.blend")
 
     # bpy.data.materials["Red"].metallic = 0
     # bpy.data.materials["Blue"].metallic = 0
@@ -225,95 +232,246 @@ def change_color(color):
     # bpy.data.materials["Red"].diffuse_color = color
     # bpy.data.materials["Blue"].specular_intensity = .5
     # bpy.data.materials["Red"].specular_intensity = .5
+setting = "Full"
+
+
+randomize_color = True
+randomize_light = True
+
+if setting == "Default":
+  dir = "FilesForKu/"
+  objects = ['Arrow_cube', 'Circle_cube', 'Cross_cube', 'Diamond_cube', 'Hexagon_cube', 'Key_cube', 'Line_cube', 'Pentagon_cube', 'U_cube']
+  #objects = ['Line_cube', 'Pentagon_cube', 'U_cube']
+  MIN = -m.pi / 3
+  MAX = m.pi / 3
+  STEP = m.pi / 18
+
+  # Randomly sample H orientations
+  H = 500
+  x_rots = np.random.uniform(MIN, MAX, H)
+  y_rots = np.random.uniform(MIN, MAX, H)
+  z_rots = np.random.uniform(0, 2 * m.pi, H)
+
+  # Convert to scipy rotations
+  sample = np.zeros((H, 3, 3))
+  for i in range(H):
+      sample[i] = R.from_euler('XYZ', [x_rots[i], y_rots[i], z_rots[i]]).as_matrix()
+
+elif setting == "Simple":
+  dir = "FilesForKu/"
+  objects = ['Cross_cube']
+  #objects = ['Line_cube', 'Pentagon_cube', 'U_cube']
+  MIN = -m.pi / 3
+  MAX = m.pi / 3
+  STEP = m.pi / 18
+
+  # Randomly sample H orientations
+  H = 500
+  x_rots = np.random.uniform(MIN, MAX, H)
+  y_rots = np.random.uniform(MIN, MAX, H)
+  z_rots = np.random.uniform(0, 2 * m.pi, H)
+
+  # Convert to scipy rotations
+  sample = np.zeros((4 * H, 3, 3))
+  for i in range(H):
+      for j in range(4):
+        # Rotate by multiples of 90 degrees
+        sample[4 * i + j] = R.from_euler('XYZ', [x_rots[i], y_rots[i], z_rots[i] + j * m.pi / 2]).as_matrix()
+        #sample[i] = R.from_euler('xyz', [x_rots[i], y_rots[i], z_rots[i]]).as_matrix()
+
+elif setting == "Full":
+  dir = "FilesForKu/"
+  objects = ['Arrow_cube', 'Circle_cube', 'Cross_cube', 'Diamond_cube', 'Hexagon_cube', 'Key_cube', 'Line_cube', 'Pentagon_cube', 'U_cube']
+  MIN = -m.pi / 3
+  MAX = m.pi / 3
+  STEP = m.pi / 18
+
+  # Randomly sample H orientations
+  H = 500
+  x_rots = np.random.uniform(MIN, MAX, H)
+  y_rots = np.random.uniform(MIN, MAX, H)
+  z_rots = np.random.uniform(0, 2 * m.pi, H)
+
+  # Convert to scipy rotations
+  sample = np.zeros((4 * H, 3, 3))
+  for i in range(H):
+      for j in range(4):
+        # Rotate by multiples of 90 degrees
+        sample[4 * i + j] = R.from_euler('XYZ', [x_rots[i], y_rots[i], z_rots[i] + j * m.pi / 2]).as_matrix()
+        #sample[i] = R.from_euler('xyz', [x_rots[i], y_rots[i], z_rots[i]]).as_matrix()
+  
+  randomize_color = False
+  randomize_light = False
+   
+
+def generate_random_data(object, name='bc_data'):
+  files = [f'{dir}{object}_bottle.blend', f'{dir}{object}_cap.blend']
+  types = ['Bottle', 'Cap']
 
 
 
-MIN = -m.pi / 3
-MAX = m.pi / 3
-STEP = m.pi / 18
-angles = np.arange(MIN, MAX, STEP)
-#angles = np.array([0])
-angles_second = angles
-angles_third = np.arange(0, 2 * m.pi, m.pi / 10)
-max_n = len(angles) * len(angles_second) * len(angles_third)
+  # Create a new hdf5 file
+  f = h5py.File(f'{object}_data.hdf5', 'w')
+  g_cap = f.create_group('Cap')
+  g_bottle = f.create_group('Bottle')
 
-print(len(angles))
-print(len(angles) ** 3)
+  # Create a dataset of images and a dataset of orientations in each group
+  dset_cap = g_cap.create_dataset('images', (0, 256, 256, 3), maxshape=(None, 256, 256, 3), dtype='uint8')
+  dset_bottle = g_bottle.create_dataset('images', (0, 256, 256, 3), maxshape=(None, 256, 256, 3), dtype='uint8')
 
-def generate_data(object, randomize_color=False):
-    files = [f'{dir}{object}_bottle.blend', f'{dir}{object}_cap.blend']
-    types = ['Bottle', 'Cap']
+  dset_cap_angles = g_cap.create_dataset('angles', (0, 3, 3), maxshape=(None, 3, 3), dtype='float32')
+  dset_bottle_angles = g_bottle.create_dataset('angles', (0, 3, 3), maxshape=(None, 3, 3), dtype='float32')
 
-    if not os.path.exists(f'bc_data/{object}'):
-            os.makedirs(f'bc_data/{object}')
-            os.makedirs(f'bc_data/{object}/Bottle')
-            os.makedirs(f'bc_data/{object}/Cap')
+  # if not os.path.exists(f'{name}/{object}'):
+  #         os.makedirs(f'{name}/{object}')
+  #         os.makedirs(f'{name}/{object}/Bottle')
+  #         os.makedirs(f'{name}/{object}/Cap')
 
-    for i in range(len(files)):
-        scene, axis, light_object = set_scene(files[i])
-        energy_bounds = [50, 150]
+  for i in range(len(files)):
+      # Set the scene
+      scene, axis, light_object = set_scene(files[i])
+      energy_bounds = [50, 150]
+      light_object.location = (0,0,.5)
+      light_object.data.energy = 50
+
+      # Make the background black
+      world = bpy.data.worlds['World']
+      world.use_nodes = True
+      bg_node = world.node_tree.nodes['Background']
+      bg_node.inputs[0].default_value[:3] = (0, 0, 0)
+
+      # Get the object
+      obj_now = scene.objects[types[i]]
+
+      max_n = len(sample)
+
+      for s in range(len(sample)):
+          # light_pos = (np.random.rand(2) - 0.5) 
+          # # Change the light position to a random position
+          # light_object.location = (light_pos[0], light_pos[1], .5)
+          # # Change energy 
+          # light_object.data.energy = np.random.uniform(energy_bounds[0], energy_bounds[1])
+          #light_object.data.energy = 50
+
+          # Randomize the color
+          #change_color(random.choice(colors))
+
+          if s % 10 == 0:
+              print(f'{s}/{max_n}')
+
+          x, y, z = R.from_matrix(sample[s]).as_euler('xyz')
+          #x, y, z = x_rots[s], y_rots[s], z_rots[s]
+          obj_now.rotation_euler = (x, y, z)
+          render = scene.render
+          render.use_overwrite = False
+          render.use_file_extension = True
+
+          #save_name = f"{name}/{object}/{types[i]}/{'{:08d}'.format(s)}.png"
+          save_name = "test.png"
+
+          render.resolution_x = 256
+          render.resolution_y = 256
+          render.resolution_percentage = 100
+          render.filepath = save_name
+
+          bpy.ops.render.render(write_still=True)
+
+          # Load the image as a PIL image
+          img_pil = Image.open(save_name)
+          img_pil = img_pil.resize((256, 256))
+          img_pil = img_pil.convert('RGB')
+          img = np.array(img_pil)
+
+
+          # Add the image to the dataset
+          if types[i] == 'Cap':
+              dset_cap.resize(dset_cap.shape[0] + 1, axis=0)
+              dset_cap[-1:] = img
+              dset_cap_angles.resize(dset_cap_angles.shape[0] + 1, axis=0)
+              dset_cap_angles[-1:] = sample[s]
+          else:
+              dset_bottle.resize(dset_bottle.shape[0] + 1, axis=0)
+              # Print the shape of the dataset
+
+              dset_bottle[-1:] = img
+              dset_bottle_angles.resize(dset_bottle_angles.shape[0] + 1, axis=0)
+              dset_bottle_angles[-1:] = sample[s]
+
+
+# def generate_data(object, randomize_color=False):
+#     files = [f'{dir}{object}_bottle.blend', f'{dir}{object}_cap.blend']
+#     types = ['Bottle', 'Cap']
+
+#     if not os.path.exists(f'bc_data/{object}'):
+#             os.makedirs(f'bc_data/{object}')
+#             os.makedirs(f'bc_data/{object}/Bottle')
+#             os.makedirs(f'bc_data/{object}/Cap')
+
+#     for i in range(len(files)):
+#         scene, axis, light_object = set_scene(files[i])
+#         energy_bounds = [50, 150]
          
-        gt_angles = np.zeros((len(angles) * len(angles_second) * len(angles_third), 4))
+#         gt_angles = np.zeros((len(angles) * len(angles_second) * len(angles_third), 4))
 
-        obj_now = scene.objects[types[i]]
+#         obj_now = scene.objects[types[i]]
         
-        n = 0
-        idx = 0
+#         n = 0
+#         idx = 0
 
-        for j in range(len(angles)):
-            x = angles[j]
-            for k in range(len(angles_second)):
-                y = angles_second[k]
-                for l in range(len(angles_third)):
-                    z = angles_third[l]
+#         for j in range(len(angles)):
+#             x = angles[j]
+#             for k in range(len(angles_second)):
+#                 y = angles_second[k]
+#                 for l in range(len(angles_third)):
+#                     z = angles_third[l]
 
-                    light_pos = (np.random.rand(2) - 0.5) 
-                    # Change the light position to a random position
-                    light_object.location = (light_pos[0], light_pos[1], .5)
-                    # Change energy 
-                    light_object.data.energy = np.random.uniform(energy_bounds[0], energy_bounds[1])
-                    light_object.data.energy = 50
+#                     light_pos = (np.random.rand(2) - 0.5) 
+#                     # Change the light position to a random position
+#                     light_object.location = (light_pos[0], light_pos[1], .5)
+#                     # Change energy 
+#                     light_object.data.energy = np.random.uniform(energy_bounds[0], energy_bounds[1])
+#                     light_object.data.energy = 50
 
 
-                    change_color(random.choice(colors))
+#                     change_color(random.choice(colors))
 
-                    if n % 10 == 0:
-                        print(f'{n}/{max_n}')
+#                     if n % 10 == 0:
+#                         print(f'{n}/{max_n}')
 
-                    # axis.rotation_euler = (x, y, z)
-                    obj_now.rotation_euler = (x, y, z)
-                    render = scene.render
-                    render.use_overwrite = False
-                    render.use_file_extension = True
+#                     # axis.rotation_euler = (x, y, z)
+#                     obj_now.rotation_euler = (x, y, z)
+#                     render = scene.render
+#                     render.use_overwrite = False
+#                     render.use_file_extension = True
 
-                    save_name = f"bc_data/{object}/{types[i]}/{'{:08d}'.format(n)}.png"
-                    #save_name = "test.png"
+#                     save_name = f"bc_data/{object}/{types[i]}/{'{:08d}'.format(n)}.png"
+#                     #save_name = "test.png"
 
-                    render.filepath = save_name
-                    render.resolution_x = 600
-                    render.resolution_y = 600
+#                     render.filepath = save_name
+#                     render.resolution_x = 600
+#                     render.resolution_y = 600
 
-                    #gt_angle_euler = np.array([x,y,z])
-                    # Turn the euler angles into a quaternion
-                    gt_angle_quat = get_quaternion_from_euler(x, y, z)
+#                     #gt_angle_euler = np.array([x,y,z])
+#                     # Turn the euler angles into a quaternion
+#                     gt_angle_quat = get_quaternion_from_euler(x, y, z)
 
-                    gt_angles[idx] = gt_angle_quat
-                    idx += 1
+#                     gt_angles[idx] = gt_angle_quat
+#                     idx += 1
 
-                    bpy.ops.render.render(write_still=True)
+#                     bpy.ops.render.render(write_still=True)
 
-                    # Write a blurb about what line 86 does 
-                    # This is the line that saves the image
-                    bpy.ops.image.open(filepath=save_name)
-                    n += 1
+#                     # Write a blurb about what line 86 does 
+#                     # This is the line that saves the image
+#                     bpy.ops.image.open(filepath=save_name)
+#                     n += 1
 
-        np.save(f'bc_data/{object}/{types[i]}/angles.npy', gt_angles)
+#         np.save(f'bc_data/{object}/{types[i]}/angles.npy', gt_angles)
 
 
 object_list = objects
 
 for obj_atm in object_list:
     print(f"Generating data for {obj_atm}")
-    generate_data(obj_atm)
+    generate_random_data(obj_atm, name="bc_data_mat")
 
 print("Done.")

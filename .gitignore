@@ -44,3 +44,13 @@ meshes/
 meshes_new/
 results_new/
 bc_data.hdf5
+bc_data_large/
+bc_data_temp/
+bottle_cap_data/
+bottle_cap_data_simple/
+deep_bingham/
+mats/
+train/
+test.blend
+test.blend1
+
